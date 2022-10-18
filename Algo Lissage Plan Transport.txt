@@ -1,0 +1,500 @@
+Option Base 1
+Public isCancelled As Boolean
+
+Sub Algo_genetique()
+
+With Application
+    .ScreenUpdating = False
+    .EnableEvents = False
+    .DisplayAlerts = False
+    .Calculation = xlManual
+End With
+
+tStart = Timer
+t1 = tStart
+isCancelled = False
+
+'Sauvegarde le fichier avant la macro
+ActiveWorkbook.Save
+
+'Collecte des paramètres
+Sheets("DATA").Select
+Range("B3").Select
+Selection.End(xlDown).Select
+nb_tournee_reel = ActiveCell.Row - 2
+
+nb_tournee = Cells(3, 7)
+nb_init = Cells(4, 7)
+nb_enf = Cells(5, 7)
+nb_parent = Cells(6, 7)
+nb_iter = Cells(7, 7)
+coef_mut = Cells(8, 7)
+nb_jour = Cells(9, 7)
+
+If nb_tournee <> nb_tournee_reel Then
+    MsgBox ("Nb de tournées différents ! (Données et Paramètres)" & Chr(10) & Chr(10) & "Fin de la macro")
+    Exit Sub
+End If
+
+'Affichage de la barre de chargement
+UserForm1.Show
+UserForm1.Label3.Width = 1 * 200 / nb_iter
+UserForm1.Label4.Caption = "00 %"
+UserForm1.Label6.Caption = "0"
+If isCancelled Then
+    MsgBox "Fin de l'algorithme ..."
+    Unload UserForm1
+    Exit Sub
+Else
+    DoEvents
+End If
+
+
+Dim Xi(), Di(), Fi(), Cat(), Ft(), memoire(), parent(), elitism()
+ReDim Xi(nb_init + nb_enf, nb_tournee) 'nbchromo init+nb enfant, nb de tournée
+ReDim Di(nb_tournee) 'nb tournée
+ReDim Fi(nb_tournee) 'nb tournée
+ReDim Cat(nb_tournee) 'nom des tournées
+ReDim Ft(nb_init + nb_enf) ''nbchromo init+nb enfant
+ReDim memoire(nb_tournee) 'nb tournée
+ReDim parent(nb_parent) 'nb parents
+ReDim elitism(nb_init) ''nbchromo init
+
+Dim P1, P2 As Integer
+'Dim Mutation
+'Mutation = 1 '100%
+
+Dim BestFO() As Long
+Dim B As String
+
+iter = 0
+'Iteration = 50
+
+ReDim BestFO(nb_iter)
+Dim A()
+ReDim A(nb_jour)
+
+'############################################# REMPLISSAGE DES DATA ################################################
+'Remplit les matrices des demandes Di, des valeurs fixes Fi
+Sheets("DATA").Select
+For i = 1 To nb_tournee
+    If (Cells(i + 2, 4).Value <= nb_jour And Cells(i + 2, 4).Value >= 1) Or IsEmpty(Cells(i + 2, 4).Value) Then
+        Fi(i) = Cells(i + 2, 4).Value
+    Else
+        Unload UserForm1
+        MsgBox "Valeurs fixes impossibles. Fin de l'algorithme ..."
+        Exit Sub
+    End If
+    Di(i) = Cells(i + 2, 2).Value
+    Cat(i) = Cells(i + 2, 1).Value
+Next i
+'###################################################################################################################
+
+'fait la somme des volume par jour
+For i = 1 To nb_tournee
+   moy = moy + Di(i)
+Next i
+moy = moy / nb_jour
+
+'________________________________ INITIALISATION _____________________________________
+
+For k = 1 To nb_init
+    If k = 1 Then
+        'Collecte de l'existant sur le 1er chromosome
+        For i = 1 To nb_tournee
+            'Si vide, random
+            If IsEmpty(Cells(2 + i, 3)) Then
+                If Not (IsEmpty(Fi(i))) Then ' s'il y a une valeur fixe pour ce gène alors le mettre
+                    Xi(k, i) = Fi(i)
+                Else
+                    Randomize
+                    Xi(k, i) = Int((nb_jour) * Rnd + 1)
+                End If
+            Else 'sinon prend la valeur existante
+                If Not (IsEmpty(Fi(i))) Then ' s'il y a une valeur fixe pour ce gène alors le mettre
+                    Xi(k, i) = Fi(i)
+                Else
+                    Xi(k, i) = Cells(2 + i, 3)
+                End If
+            End If
+        Next i
+    Else
+        'remplit les autres chromosomes aléatoirement
+        For i = 1 To nb_tournee
+            If Not (IsEmpty(Fi(i))) Then ' s'il y a une valeur fixe pour ce gène alors le mettre
+                Xi(k, i) = Fi(i)
+            Else
+                Randomize
+                Xi(k, i) = Int((nb_jour) * Rnd + 1)
+            End If
+        Next i
+    End If
+
+    'calcul le volume par jour (stocké dans A)
+    Erase A
+    ReDim A(nb_jour)
+    For i = 1 To nb_tournee
+        For j = 1 To nb_jour
+            If Xi(k, i) = j Then
+                A(j) = A(j) + Di(i)
+                Exit For
+            End If
+        Next j
+    Next i
+
+    'calcul des écart par rapport à la moyenne
+    ecart = 0
+    For j = 1 To nb_jour
+'        If A(j) - moy > 0 Then
+        ecart = ecart + (A(j) - moy) ^ 2
+'        Else
+'            ecart = ecart - (A(j) - moy)
+'        End If
+    Next j
+    Ft(k) = ecart
+Next k
+
+'------------------------------- Trie selon la fitness value ---------------------------------
+For i = 1 To nb_init
+    Min = i
+    For j = i + 1 To nb_init
+        If Ft(j) < Ft(Min) Then
+            Min = j
+        End If
+    Next j
+    For k = 1 To nb_tournee
+        memoire(k) = Xi(Min, k)
+        Xi(Min, k) = Xi(i, k)
+        Xi(i, k) = memoire(k)
+    Next k
+    ftmemoire = Ft(Min)
+    Ft(Min) = Ft(i)
+    Ft(i) = ftmemoire
+Next i
+
+'Affichage de la barre de chargement
+UserForm1.Label3.Width = 1 * 200 / nb_iter
+UserForm1.Label4.Caption = WorksheetFunction.RoundUp(1 * 100 / nb_iter, 0) & " %"
+UserForm1.Label6.Caption = Format(Ft(1), " #,##0")
+If isCancelled Then
+    MsgBox "Fin de l'algorithme ..."
+    Unload UserForm1
+    Exit Sub
+Else
+    DoEvents
+End If
+
+'++++++++++++++++++++++++++++++++++++ I T E R A T I O N +++++++++++++++++++++++++++++++
+Do
+erreur_enfant = 0
+
+'================================ Selection des parents ===============================
+'-------------------------- Roulette wheel selection with elitism ---------------------
+
+For i = 1 To nb_init
+    elitism(i) = 101 - (100 / nb_init) * i
+Next i
+k = 1
+Do While k <= nb_parent 'nb de parent sélectionne par élistisme
+    erreur = 0
+    Randomize:    ba = Int((Rnd * 100) + 1)
+    Randomize:    BB = Int((Rnd * nb_init) + 1)
+    If elitism(BB) > ba Then
+        For bc = 1 To k - 1
+            If parent(bc) = BB Then
+                erreur = 1
+                Exit For
+            End If
+        Next bc
+        parent(k) = BB
+        k = k + 1 - erreur
+    End If
+Loop
+'MsgBox "wheel fin"
+
+
+
+
+'============================= Cross-over et mutation ======================================
+
+enf = 1
+Do
+    '----------------------- Selection des deux parents ----------------------------
+    Randomize: P1 = Int((Rnd * (nb_parent)) + 1)
+    Randomize: P2 = Int((Rnd * (nb_parent)) + 1)
+    'Evite de prendre P1=P2
+    If parent(P1) = parent(P2) And P1 = (nb_parent) Then
+        P2 = P2 - 1
+    End If
+    If parent(P1) = parent(P2) Then
+        P2 = P2 + 1
+    End If
+    
+    '------------------------------- Cross-over #1 ----------------------------------
+    'en un seul point, entre in et out
+    erreur = 0
+    If enf <= nb_enf Then
+        Randomize: Cut = Int((Rnd * (nb_tournee)) + 1)
+        For i = 1 To Cut
+            Xi(enf + nb_init, i) = Xi(parent(P1), i)
+        Next i
+        For i = Cut To nb_tournee
+            Xi(enf + nb_init, i) = Xi(parent(P2), i)
+        Next i
+        '----------test anti clone-----
+        For k = 1 To nb_init + enf - 1
+            egal = 0
+            For kk = 1 To nb_tournee 'test si 1 gène en commun avec tous les autres individus
+                If Xi(k, kk) = Xi(enf + nb_init, kk) Then
+                    egal = egal + 1
+                End If
+            Next kk
+            If egal = nb_tournee Then 'si le nb d'égalité = nb gène, alors clone
+                erreur = 1
+                erreur_enfant = erreur_enfant + 1
+                Exit For
+            End If
+        Next k
+        enf = enf + 1 - erreur
+    Else: Exit Do
+    End If
+
+    '--------------------------------- Mutation #1 ---------------------------------
+    Randomize: Mutation = Rnd
+    If erreur = 0 And enf <= nb_enf And coef_mut >= Mutation Then
+        '-----fait un clone--------
+        For i = 1 To nb_tournee
+            Xi(enf + nb_init, i) = Xi(enf - 1 + nb_init, i)
+        Next i
+        '-------Modifie un gène aléatoirement------
+        Randomize: mutnew = Int((Rnd * (nb_jour)) + 1)
+        Do
+            Randomize: mutgene = Int((Rnd * (nb_tournee)) + 1) 'si gène muté = gène fixe alors recommence
+        Loop While Not (IsEmpty(Fi(mutgene)))
+        
+        If Xi(enf + nb_init, mutgene) = mutnew And mutnew = nb_jour Then
+            mutnew = mutnew - 1
+        ElseIf Xi(enf + nb_init0, mutgene) = mutnew Then
+            mutnew = mutnew + 1
+        End If
+        
+        Xi(enf + nb_init, mutgene) = mutnew
+        
+        '----------test anti clone-----
+        For k = 1 To nb_init + enf - 1
+            egal = 0
+            For kk = 1 To nb_tournee
+                If Xi(k, kk) = Xi(enf + nb_init, kk) Then
+                    egal = egal + 1
+                End If
+            Next kk
+            If egal = nb_tournee Then
+                erreur = 1
+                erreur_enfant = erreur_enfant + 1
+                Exit For
+            End If
+        Next k
+        enf = enf + 1 - erreur
+    ElseIf enf = Nbenf Then
+        Exit Do
+    End If
+    
+
+    '------------------------------- Cross-over #2 ----------------------------------
+    'en un seul point, entre in et out
+    erreur = 0
+    If enf <= nb_enf Then
+        Randomize: Cut = Int((Rnd * (nb_tournee)) + 1)
+        For i = 1 To Cut
+            Xi(enf + nb_init, i) = Xi(parent(P2), i)
+        Next i
+        For i = Cut To nb_tournee
+            Xi(enf + nb_init, i) = Xi(parent(P1), i)
+        Next i
+        '----------test anti clone-----
+        For k = 1 To nb_init + enf - 1
+            egal = 0
+            For kk = 1 To nb_tournee
+                If Xi(k, kk) = Xi(enf + nb_init, kk) Then
+                    egal = egal + 1
+                End If
+            Next kk
+            If egal = nb_tournee Then
+                erreur = 1
+                erreur_enfant = erreur_enfant + 1
+                Exit For
+            End If
+        Next k
+        enf = enf + 1 - erreur
+    Else: Exit Do
+    End If
+
+    '--------------------------------- Mutation #2 ---------------------------------
+    Randomize: Mutation = Rnd
+    If erreur = 0 And enf <= nb_enf And coef_mut >= Mutation Then
+        '-----fait un clone--------
+        For i = 1 To nb_tournee
+            Xi(enf + nb_init, i) = Xi(enf - 1 + nb_init, i)
+        Next i
+        '-------Modifie un gène aléatoirement------
+        Randomize: mutnew = Int((Rnd * (nb_jour)) + 1)
+        Do
+            Randomize: mutgene = Int((Rnd * (nb_tournee)) + 1) 'si gène muté = gène fixe alors recommence
+        Loop While Not (IsEmpty(Fi(mutgene)))
+        
+        If Xi(enf + nb_init, mutgene) = mutnew And mutnew = 5 Then
+            mutnew = mutnew - 1
+        ElseIf Xi(enf + nb_init, mutgene) = mutnew Then
+            mutnew = mutnew + 1
+        End If
+        
+        Xi(enf + nb_init, mutgene) = mutnew
+        
+        '----------test anti clone-----
+        For k = 1 To nb_init + enf - 1
+            egal = 0
+            For kk = 1 To nb_tournee
+                If Xi(k, kk) = Xi(enf + nb_init, kk) Then
+                    egal = egal + 1
+                End If
+            Next kk
+            If egal = nb_tournee Then
+                erreur = 1
+                erreur_enfant = erreur_enfant + 1
+                Exit For
+            End If
+        Next k
+        enf = enf + 1 - erreur
+    ElseIf enf = Nbenf Then
+        Exit Do
+    End If
+    'limite de clone avant le fin de l'itération
+    If erreur_enfant > 1000 Then
+        Exit Do
+    End If
+Loop
+
+
+'________________________Calcul la fitness des enfants_______________
+
+For k = nb_enf + 1 To nb_enf + nb_init
+
+    'calcul le volume par jour (stocké dans A)
+    Erase A
+    ReDim A(nb_jour)
+    For i = 1 To nb_tournee
+        For j = 1 To nb_jour
+            If Xi(k, i) = 0 Then 'si un individu est manquant, càd erreur_enfant > 1000, donc Ft=1E+20
+                Ft(k) = 1E+20
+                GoTo line1
+            Else
+                If Xi(k, i) = j Then
+                    A(j) = A(j) + Di(i)
+                End If
+            End If
+        Next j
+    Next i
+
+    'calcul des écart par rapport à la moyenne
+    ecart = 0
+    For j = 1 To nb_jour
+'        If A(j) - moy > 0 Then
+        ecart = ecart + (A(j) - moy) ^ 2
+'        Else
+'            ecart = ecart - (A(j) - moy)
+'        End If
+    Next j
+    Ft(k) = ecart
+line1:
+Next k
+
+'------------------------------- Trie selon la fitness value ---------------------------------
+For i = 1 To nb_init + nb_enf
+    Min = i
+    For j = i + 1 To nb_init + nb_enf
+        If Ft(j) < Ft(Min) Then
+            Min = j
+        End If
+    Next j
+    For k = 1 To nb_tournee
+        memoire(k) = Xi(Min, k)
+        Xi(Min, k) = Xi(i, k)
+        Xi(i, k) = memoire(k)
+    Next k
+    ftmemoire = Ft(Min)
+    Ft(Min) = Ft(i)
+    Ft(i) = ftmemoire
+Next i
+
+'----------------- Suppr les mauvais éléments -------------------
+For i = nb_init + 1 To nb_init + nb_enf
+    For j = 1 To nb_tournee
+        Xi(i, j) = 0
+    Next j
+    Ft(i) = 0
+Next i
+
+BestFO(iter + 1) = Ft(1)
+iter = iter + 1
+
+'If iter = nb_iter / 4 Then
+'    MsgBox ("25%")
+'ElseIf iter = nb_iter / 2 Then
+'    MsgBox ("50%")
+'ElseIf iter = 3 * nb_iter / 4 Then
+'    MsgBox ("75%")
+'End If
+
+'MsgBox ("Iteration : " & iter & " - " & Ft(1))
+
+' Temps
+t2 = Timer
+timeleft = (nb_iter * (t2 - tStart) / iter) - (t2 - tStart)
+hrs = Fix(timeleft / 3600)
+mins = Fix(timeleft / 60) - (hrs * 60)
+secs = (timeleft Mod 60)
+
+'Affichage de la barre de chargement
+UserForm1.Label3.Width = iter * 200 / nb_iter
+UserForm1.Label4.Caption = WorksheetFunction.RoundUp(iter * 100 / nb_iter, 0) & " %"
+UserForm1.Label6.Caption = Format(Ft(1), " #,##0")
+UserForm1.Label8.Caption = hrs & ":" & Format(mins, "00") & ":" & Format(secs, "00")
+If isCancelled Then
+    MsgBox "Fin de l'algorithme ..."
+    Unload UserForm1
+    Exit Sub
+Else
+    DoEvents
+End If
+
+Loop While iter < nb_iter
+'################################################ F I N #############################
+
+'Affichage des résultats
+Max_result = 10 'affiche les 10 meilleurs individus
+
+Sheets("RESULTS").Select
+For i = 1 To nb_tournee
+    Cells(i + 2, 1) = Cat(i)
+    Cells(i + 2, 2) = Di(i)
+    For j = 1 To Max_result
+        Cells(i + 2, 4 + j) = Xi(j, i)
+    Next j
+Next i
+
+For j = 1 To Max_result
+    Cells(2, 4 + j) = Ft(j)
+Next j
+
+Unload UserForm1
+
+MsgBox "Algorithme terminé !"
+
+With Application
+    .ScreenUpdating = True
+    .EnableEvents = True
+    .DisplayAlerts = True
+    .Calculation = xlAutomatic
+End With
+
+End Sub
